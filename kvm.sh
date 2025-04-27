@@ -1,45 +1,68 @@
 #!/bin/bash
 
-# Script to set up KVM on Ubuntu
+# Open a new bash shell at the start
+clear
 
-echo "Checking CPU virtualization support..."
-if [[ $(egrep -c '(vmx|svm)' /proc/cpuinfo) -eq 0 ]]; then
-    echo "Virtualization is not supported on this machine."
+# Check if running as root
+if [ "$(id -u)" -eq 0 ]; then
+    echo "Please don't run this script as root or with sudo."
+    echo "The script will use sudo when needed."
     exit 1
-else
-    echo "CPU virtualization is supported."
 fi
 
-echo "Installing required packages..."
-sudo apt update
-sudo apt install -y qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils virt-manager
+# Detect if running in WSL
+WSL=false
+if grep -q Microsoft /proc/version || grep -q WSL /proc/version; then
+    WSL=true
+fi
 
-echo "Adding current user to 'libvirt' and 'kvm' groups..."
+# Install KVM and related tools
+echo "sudo apt update"
+sudo apt update
+
+echo "sudo apt install -y qemu-kvm libvirt-daemon-system virtinst bridge-utils virt-manager"
+sudo apt install -y qemu-kvm libvirt-daemon-system virtinst bridge-utils virt-manager
+
+# Add user to necessary groups
+echo "sudo usermod -aG libvirt \$USER"
 sudo usermod -aG libvirt "$USER"
+
+echo "sudo usermod -aG kvm \$USER"
 sudo usermod -aG kvm "$USER"
 
-echo "Verifying and starting libvirtd service..."
-sudo systemctl enable libvirtd
-sudo systemctl start libvirtd
-
-echo "Checking KVM kernel modules..."
-if ! lsmod | grep -q kvm; then
-    echo "Loading KVM kernel modules..."
-    sudo modprobe kvm
-    sudo modprobe kvm_intel 2>/dev/null || sudo modprobe kvm_amd
+# Start and enable libvirt service
+if $WSL; then
+    echo "sudo service libvirtd start"
+    sudo service libvirtd start
 else
-    echo "KVM modules already loaded."
+    echo "sudo systemctl start libvirtd"
+    sudo systemctl start libvirtd
+
+    echo "sudo systemctl enable libvirtd"
+    sudo systemctl enable libvirtd
 fi
 
-echo "Verifying /dev/kvm permissions..."
-if [ -e /dev/kvm ]; then
-    sudo chown root:kvm /dev/kvm
-    sudo chmod 660 /dev/kvm
-    echo "/dev/kvm permissions set."
-else
-    echo "/dev/kvm not found. You might be running in WSL or a restricted environment."
+# Configure GUI access
+if $WSL; then
+    if ! grep -q "export DISPLAY=" ~/.bashrc; then
+        echo "echo 'export DISPLAY=\$(grep -m 1 nameserver /etc/resolv.conf | awk \"{print \\$2}\"):0.0' >> ~/.bashrc"
+        echo 'export DISPLAY=$(grep -m 1 nameserver /etc/resolv.conf | awk "{print \$2}"):0.0' >> ~/.bashrc
+
+        echo "echo 'export LIBGL_ALWAYS_INDIRECT=1' >> ~/.bashrc"
+        echo 'export LIBGL_ALWAYS_INDIRECT=1' >> ~/.bashrc
+    fi
+
+    echo "export DISPLAY=\$(grep -m 1 nameserver /etc/resolv.conf | awk '{print \$2}'):0.0"
+    export DISPLAY=$(grep -m 1 nameserver /etc/resolv.conf | awk '{print $2}'):0.0
+
+    echo "export LIBGL_ALWAYS_INDIRECT=1"
+    export LIBGL_ALWAYS_INDIRECT=1
 fi
 
-echo "Setup complete. You may need to reboot or log out/in for group changes to take effect."
+# Finished setup
+read -rp "Would you like to launch virt-manager now? (y/n): " answer
+if [[ "$answer" =~ ^[Yy]$ ]]; then
+    echo "virt-manager"
+    virt-manager
+fi
 
-virt-manager 

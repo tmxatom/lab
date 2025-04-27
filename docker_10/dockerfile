@@ -1,10 +1,4 @@
-FROM python:3.9.22-slim-bullseye
 
-WORKDIR /app
-
-COPY . .
-
-CMD [ "python" , "app.py" ]
 
 
 
